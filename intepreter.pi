@@ -1,0 +1,118 @@
+main([File]) =>
+    tokenize(File,S),
+    SymTab = new_map(),
+    interp(S,[],SymTab),
+    foreach ((Key=Val) in SymTab)
+        printf("%w = %w\n",Key,Val)
+    end.
+
+tokenize(File,S) =>
+    Cs = read_file_chars(File),
+    scan(Cs,S).
+
+scan([],S) => S = [].
+scan([C|Cs],S), white_space(C) =>
+    scan(Cs,S).
+scan([C|Cs],S), operator(C) =>
+    S = [C|S1],
+    scan(Cs,S1).
+scan([C|Cs],S), ascii_digit(C) =>
+    tokenize_literal(Cs,Cs1,Str),
+    if C == '0' && Str != [] then
+        throw($invalid_literal([C|Str]))
+    end,
+    Token = to_integer([C|Str]),
+    S = [Token|S1],
+    scan(Cs1,S1).
+scan([C|Cs],S), (ascii_alpha(C) || C == '_') =>
+    tokenize_id(Cs,Cs1,Str),
+    Token = to_atom([C|Str]),
+    S = [Token|S1],
+    scan(Cs1,S1).
+scan([C|Cs],S) =>
+    throw($unrecognized_char(C)).
+ 
+tokenize_literal([C|Cs],Cs1,Str), ascii_digit(C) =>
+    Str = [C|Str1],
+    tokenize_literal(Cs,Cs1,Str1).
+tokenize_literal(Cs,Cs1,Str) =>
+    Cs1 = Cs,
+    Str = [].
+
+tokenize_id([C|Cs],Cs1,Str), ascii_alpha_digit(C) =>
+    Str = [C|Str1],
+    tokenize_id(Cs,Cs1,Str1).
+tokenize_id(['_'|Cs],Cs1,Str) =>
+    Str = ['_'|Str1],
+    tokenize_id(Cs,Cs1,Str1).
+tokenize_id(Cs,Cs1,Str) =>
+    Cs1 = Cs,
+    Str = [].
+
+interp([],So,SymTab) => So = [].
+interp(Si,So,SymTab) =>
+    assignment(Si,S1,SymTab),
+    interp(S1,So,SymTab).
+
+assignment([Lhs|Si],So,SymTab) =>
+    identifier(Lhs),
+    Si = ['='|S1],
+    exp(S1,S2,SymTab,Val),
+    S2 = [';'|So],
+    put(SymTab,Lhs,Val).
+
+% E -> E + T | E - T | T
+table
+exp(Si,So,SymTab,Val) ?=>
+    exp(Si,S1,SymTab,Val1),
+    S1 = [Op|S2],
+    (Op = '+' || Op = '-'),
+    term(S2,So,SymTab,Val2),
+    Val = apply(Op,Val1,Val2).
+exp(Si,So,SymTab,Val) =>
+    term(Si,So,SymTab,Val).
+
+% T -> T * F | T / F | F
+table
+term(Si,So,SymTab,Val) ?=>
+    term(Si,S1,SymTab,Val1),
+    S1 = ['*'|S2],
+    factor(S2,So,SymTab,Val2),
+    Val = apply('*',Val1,Val2).
+term(Si,So,SymTab,Val) =>
+    factor(Si,So,SymTab,Val).
+    
+% F -> ( E ) | - F | + F | Literal | Identifier
+factor(['('|Si],So,SymTab,Val) =>
+    exp(Si,S1,SymTab,Val),
+    S1 = [')'|So].
+factor(['-'|Si],So,SymTab,Val) =>
+    factor(Si,So,SymTab,Val1),
+    Val = -Val1.
+factor(['+'|Si],So,SymTab,Val) =>
+    factor(Si,So,SymTab,Val).
+factor([Id|Si],So,SymTab,Val), atom(Id) =>
+    So = Si,
+    if has_key(SymTab,Id) then
+        Val = get(SymTab,Id)
+    else
+        throw($undefined_identifier(Id))
+    end.
+factor([Num|Si],So,SymTab,Val), number(Num) =>
+    So = Si,
+    Val = Num.
+
+operator('=').
+operator('+').
+operator('-').
+operator('*').
+operator(';').
+
+white_space(' ').
+white_space('\r').
+white_space('\t').
+white_space('\n').
+
+identifier(Token) =>
+    not number(Token),
+    not operator(Token).
